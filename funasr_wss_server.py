@@ -235,8 +235,8 @@ from funasr import AutoModel  # noqa
 
 # ====== 离线 ASR ======
 model_asr = AutoModel(
-    model="paraformer-zh",
-    model_revision="v2.0.4",
+    model=args.asr_model,
+    model_revision=args.asr_model_revision,
     ngpu=args.ngpu,
     ncpu=args.ncpu,
     device=args.device,

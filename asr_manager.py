@@ -51,7 +51,8 @@ def start_server():
         
     uv_args.extend([
         "python", server_script,
-        "--asr_model", "FunAudioLLM/Fun-ASR-Nano-2512",
+        "--asr_model", "iic/SenseVoiceSmall",
+        "--asr_model_revision", "master",
         "--vad_model", "fsmn-vad",
         # "--punc_model", "ct-punc",
         "--host", "0.0.0.0",

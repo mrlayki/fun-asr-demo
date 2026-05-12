@@ -321,6 +321,11 @@
                     const res = JSON.parse(event.data);
                     emptyState.style.display = 'none';
 
+                    // 清洗 SenseVoiceSmall 模型输出的特殊标记 (如 <|zh|><|NEUTRAL|><|Speech|><|woitn|>)
+                    if (res.text) {
+                        res.text = res.text.replace(/<\|[^|]*\|>/g, '').trim();
+                    }
+
                     // Update speaker info if available
                     if (res.spk_name && res.spk_name !== 'unknown') {
                         speakerInfo.textContent = `说话人: ${res.spk_name} (置信度: ${(res.spk_score).toFixed(2)})`;

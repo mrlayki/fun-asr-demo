@@ -124,6 +124,14 @@ websocket.onopen = () => {
 
 websocket.onmessage = (event) => {
     const res = JSON.parse(event.data);
+
+    // ⚠️ 重要：离线模型(SenseVoiceSmall)会在文本前附加特殊标记，必须清洗！
+    // 示例原始输出: "<|zh|><|NEUTRAL|><|Speech|><|woitn|>你好世界"
+    // 清洗后: "你好世界"
+    if (res.text) {
+        res.text = res.text.replace(/<\|[^|]*\|>/g, '').trim();
+    }
+
     if (res.is_final) {
         console.log("✅ 最终句断定：", res.text);
     } else {
