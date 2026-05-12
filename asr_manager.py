@@ -91,7 +91,11 @@ def main():
         print("  [2] 🧹 清理瘦身 (彻底删除 2.3GB 模型文件)")
         print("  [0] 🚪 退出脚本")
         print("="*40)
-        
+        if os.environ.get("ASR_AUTO_START") == "true":
+            print("🚀 检测到 ASR_AUTO_START 环境变量，自动进入 [1] 启动服务模式...")
+            start_server()
+            return
+
         choice = input("👉 请输入序号按回车：").strip()
         
         if choice == '1':
