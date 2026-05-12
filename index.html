@@ -263,6 +263,22 @@
                     <input type="text" id="hotwordsInput" value="" placeholder="空格分隔(如: 阿里 达摩院) 或 JSON字典(加权重)">
                 </div>
                 <button id="btnConnect" class="btn-primary">连接服务</button>
+                <div class="input-group" style="flex: 100%; margin-top: 0.5rem;">
+                    <label for="noiseGate">
+                        人声过滤门槛 (当前值: <span id="gateVal">0.020</span>)
+                        <span style="font-size: 0.8rem; color: #64748b;">*滑到右边过滤越强，需贴近麦克风说话</span>
+                    </label>
+                    <input type="range" id="noiseGate" min="0" max="0.1" step="0.005" value="0.020">
+                    <div
+                        style="height: 6px; background: var(--border); margin-top: 8px; border-radius: 3px; overflow: hidden; position: relative;">
+                        <div id="gateMarker"
+                            style="position: absolute; left: 20%; top: 0; bottom: 0; width: 2px; background: var(--danger); z-index: 10;">
+                        </div>
+                        <div id="volumeBar"
+                            style="height: 100%; width: 0%; background: var(--text-muted); transition: width 0.05s linear, background-color 0.2s;">
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="control-group" style="margin-top: 1.5rem; justify-content: space-between; align-items: center;">
@@ -311,6 +327,18 @@
         const partialTextEl = document.getElementById('partialText');
         const emptyState = document.getElementById('emptyState');
         const speakerInfo = document.getElementById('speakerInfo');
+        const noiseGateInput = document.getElementById('noiseGate');
+        const gateValSpan = document.getElementById('gateVal');
+        const volumeBar = document.getElementById('volumeBar');
+        const gateMarker = document.getElementById('gateMarker');
+
+        // 监听滑动条变化
+        noiseGateInput.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value).toFixed(3);
+            gateValSpan.textContent = val;
+            // 更新指示线位置 (max value is 0.1, so percentage is value / 0.1 * 100)
+            gateMarker.style.left = `${(e.target.value / 0.1) * 100}%`;
+        });
 
         // State variables
         let websocket = null;
@@ -485,18 +513,40 @@
 
                 processor.onaudioprocess = (e) => {
                     if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
-                    if (isPaused) return; // 如果暂停了，直接抛弃音频帧，不发给服务端
+                    if (isPaused) return;
 
                     const inputData = e.inputBuffer.getChannelData(0);
-                    // Convert Float32 to Int16
                     const pcmData = new Int16Array(inputData.length);
+
+                    // 1. 计算当前音频帧的实时音量 (RMS)
+                    let sum = 0;
                     for (let i = 0; i < inputData.length; i++) {
-                        // Prevent clipping
-                        const s = Math.max(-1, Math.min(1, inputData[i]));
-                        pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                        sum += inputData[i] * inputData[i];
+                    }
+                    const rms = Math.sqrt(sum / inputData.length);
+
+                    // 2. 更新 UI 音量条表现
+                    const currentThreshold = parseFloat(noiseGateInput.value);
+                    // 放大 RMS 以便在 UI 上显示 (0.1 为满格)
+                    const displayWidth = Math.min((rms / 0.1) * 100, 100);
+                    volumeBar.style.width = `${displayWidth}%`;
+
+                    // 3. 噪音门拦截逻辑
+                    if (rms < currentThreshold) {
+                        // 【被拦截】音量太小（周围同事的声音）。
+                        // 前端直接生成纯静音数据（全 0 的数组），发给后端。
+                        // 这会让后端的 VAD 模型判定当前没人说话，从而触发离线断句。
+                        pcmData.fill(0);
+                        volumeBar.style.background = 'var(--text-muted)'; // 灰色表示未达标
+                    } else {
+                        // 【放行】音量足够（你贴近麦克风的声音）。正常做浮点数转 16-bit PCM。
+                        volumeBar.style.background = 'var(--accent)'; // 绿色表示声音已发送
+                        for (let i = 0; i < inputData.length; i++) {
+                            const s = Math.max(-1, Math.min(1, inputData[i]));
+                            pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                        }
                     }
 
-                    // Send binary PCM directly
                     websocket.send(pcmData.buffer);
                 };
 
