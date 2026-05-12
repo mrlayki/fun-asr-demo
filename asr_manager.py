@@ -28,10 +28,10 @@ def start_server():
         "--with", "funasr", 
         "--with", "websockets", 
         "--with", "modelscope",
-        "--with", "transformers",
-        "--with", "tokenizers",
-        "--with", "zhconv",
-        "--with", "whisper_normalizer"
+        # "--with", "transformers",
+        # "--with", "tokenizers",
+        # "--with", "zhconv",
+        # "--with", "whisper_normalizer"
     ]
     
     # 确保官方 WebSocket 服务端脚本存在
