@@ -55,7 +55,9 @@ def start_server():
         "--vad_model", "fsmn-vad",
         # "--punc_model", "ct-punc",
         "--host", "0.0.0.0",
-        "--port", "10095"
+        "--port", "10095",
+        "--certfile", "",
+        "--keyfile", ""
     ])
     
     try:
