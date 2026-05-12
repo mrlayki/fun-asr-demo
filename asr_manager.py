@@ -22,12 +22,25 @@ def start_server():
     uv_args = [
         "uv", "run",
         "--python", "3.10",
+        "--with", "numpy<2",
         "--with", "torch",
         "--with", "torchaudio",
         "--with", "funasr", 
         "--with", "websockets", 
         "--with", "modelscope"
     ]
+    
+    # 确保官方 WebSocket 服务端脚本存在
+    server_script = "funasr_wss_server.py"
+    if not os.path.exists(server_script):
+        print(f"📥 正在下载官方 WebSocket 服务端脚本 ({server_script})...")
+        import urllib.request
+        url = "https://raw.githubusercontent.com/modelscope/FunASR/main/runtime/python/websocket/funasr_wss_server.py"
+        try:
+            urllib.request.urlretrieve(url, server_script)
+        except Exception as e:
+            print(f"❌ 下载脚本失败: {e}")
+            return
     
     # 智能判断系统架构，填补平台兼容性大坑
     system = platform.system()
@@ -37,10 +50,10 @@ def start_server():
         uv_args.extend(["--with", "llvmlite<=0.45.0"])
         
     uv_args.extend([
-        "python", "-m", "funasr.bin.websocket_server",
-        "--model_dir", "FunAudioLLM/Fun-ASR-Nano-2512",
-        "--vad_dir", "fsmn-vad",
-        # "--punc_dir", "ct-punc",
+        "python", server_script,
+        "--asr_model", "FunAudioLLM/Fun-ASR-Nano-2512",
+        "--vad_model", "fsmn-vad",
+        # "--punc_model", "ct-punc",
         "--host", "0.0.0.0",
         "--port", "10095"
     ])
