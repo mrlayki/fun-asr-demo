@@ -355,6 +355,9 @@ async def ws_serve(websocket, path=None):
     websocket.status_dict_vad = {"cache": {}, "is_final": False}
     websocket.status_dict_punc = {"cache": {}}
 
+    # 👇 新增这一行：用于存储当前会话出现过的说话人特征向量
+    websocket.session_speakers = [] 
+
     websocket.chunk_interval = 10
     websocket.vad_pre_idx = 0
     speech_start = False
@@ -554,31 +557,13 @@ async def async_vad(websocket, audio_in: bytes):
     return speech_start, speech_end
 
 
-def _sv_and_match_sync(audio_in: bytes, reload_sec: int):
+def _get_embedding_sync(audio_in: bytes):
     """
-    同步执行：SV embedding + speaker_db 匹配
-    返回 (spk_name, best_score)
+    同步执行：仅提取 SV embedding，不负责匹配
     """
-    spk_name = "unknown"
-    best_score = 0.0
-
     sv_out = model_sv.generate(input=audio_in, embedding=True)[0]
     embedding = sv_out["spk_embedding"][0].cpu().numpy()
-
-    now_ts = time.time()
-    local_speaker_db = get_speaker_db_cached(now_ts, reload_sec=reload_sec)
-    if local_speaker_db:
-        for name, ref_embedding in local_speaker_db.items():
-            if ref_embedding is None:
-                continue
-            arr = np.array(ref_embedding, dtype=np.float32)
-            similarity = 1.0 - cosine(embedding, arr)
-            print("sv similarity with {}: {}".format(name, similarity))
-            if similarity > best_score and similarity > 0.2:
-                best_score = similarity
-                spk_name = name
-
-    return spk_name, float(best_score)
+    return embedding
 
 
 async def async_asr(websocket, audio_in: bytes):
@@ -613,18 +598,45 @@ async def async_asr(websocket, audio_in: bytes):
     timestamp = rec_result.get("timestamp", None)
     sentence_info = rec_result.get("sentence_info", None)
 
-    # 2) 声纹识别（阻塞，线程池执行）
+    # 2) 声纹识别与盲分段（动态聚类）
     spk_name = "unknown"
-    best_score = 0.0
+    best_score = -1.0
+    best_idx = -1
+
     try:
-        spk_name, best_score = await run_blocking(
-            _sv_and_match_sync,
+        embedding = await run_blocking(
+            _get_embedding_sync,
             audio_in,
-            int(args.speaker_db_reload_sec),
             sem=SEM_SV,
         )
+
+        embedding = embedding / np.linalg.norm(embedding)
+
+        threshold = 0.5
+
+        for i, ref_emb in enumerate(websocket.session_speakers):
+            ref_emb = ref_emb / np.linalg.norm(ref_emb)
+            similarity = float(np.dot(embedding, ref_emb))
+            print(f"[声纹调试] 当前音频与 说话人 {i+1} 的相似度: {similarity:.4f}")
+
+            if similarity > best_score:
+                best_score = similarity
+                best_idx = i
+
+        print(f"[声纹调试] 最高得分为: {best_score:.4f}, 当前阈值为: {threshold}")
+        if best_score < threshold or best_idx == -1:
+            websocket.session_speakers.append(embedding)
+            spk_name = f"说话人 {len(websocket.session_speakers)}"
+            best_score = 1.0
+        else:
+            spk_name = f"说话人 {best_idx + 1}"
+
+            alpha = 0.8
+            updated = alpha * websocket.session_speakers[best_idx] + (1 - alpha) * embedding
+            websocket.session_speakers[best_idx] = updated / np.linalg.norm(updated)
+
     except Exception as e:
-        print(f"声纹识别失败: {e}")
+        print(f"声纹盲分段失败: {e}")
 
     # 3) 标点（阻塞，线程池执行）
     punc_array = None
