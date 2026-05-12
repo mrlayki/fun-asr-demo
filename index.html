@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -32,7 +33,7 @@
             justify-content: center;
             min-height: 100vh;
             padding: 2rem;
-            background-image: 
+            background-image:
                 radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.15), transparent 25%),
                 radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.15), transparent 25%);
         }
@@ -124,17 +125,48 @@
             gap: 0.5rem;
         }
 
-        .btn-primary { background: var(--primary); }
-        .btn-primary:hover { background: var(--primary-hover); }
-        .btn-primary:disabled { background: #475569; cursor: not-allowed; opacity: 0.7; }
+        .btn-primary {
+            background: var(--primary);
+        }
 
-        .btn-danger { background: var(--danger); }
-        .btn-danger:hover { background: var(--danger-hover); }
-        .btn-danger:disabled { background: #475569; cursor: not-allowed; opacity: 0.7; }
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
 
-        .btn-warning { background: #f59e0b; color: white; }
-        .btn-warning:hover { background: #d97706; }
-        .btn-warning:disabled { background: #475569; cursor: not-allowed; opacity: 0.7; }
+        .btn-primary:disabled {
+            background: #475569;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+        }
+
+        .btn-danger:hover {
+            background: var(--danger-hover);
+        }
+
+        .btn-danger:disabled {
+            background: #475569;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        .btn-warning {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #d97706;
+        }
+
+        .btn-warning:disabled {
+            background: #475569;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
 
         .status-badge {
             display: inline-flex;
@@ -155,13 +187,28 @@
             background: #64748b;
         }
 
-        .status-dot.connected { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
-        .status-dot.recording { background: var(--danger); animation: pulse 1.5s infinite; }
+        .status-dot.connected {
+            background: var(--accent);
+            box-shadow: 0 0 10px var(--accent);
+        }
+
+        .status-dot.recording {
+            background: var(--danger);
+            animation: pulse 1.5s infinite;
+        }
 
         @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+            0% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+
+            70% {
+                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
         }
 
         .transcript-box {
@@ -177,9 +224,14 @@
             position: relative;
         }
 
-        .transcript-final { color: var(--text-main); }
-        .transcript-partial { color: var(--text-muted); }
-        
+        .transcript-final {
+            color: var(--text-main);
+        }
+
+        .transcript-partial {
+            color: var(--text-muted);
+        }
+
         .empty-state {
             position: absolute;
             top: 50%;
@@ -191,6 +243,7 @@
         }
     </style>
 </head>
+
 <body>
 
     <div class="container">
@@ -211,7 +264,7 @@
                 </div>
                 <button id="btnConnect" class="btn-primary">连接服务</button>
             </div>
-            
+
             <div class="control-group" style="margin-top: 1.5rem; justify-content: space-between; align-items: center;">
                 <div class="status-badge">
                     <div class="status-dot" id="wsStatusDot"></div>
@@ -229,7 +282,8 @@
         </div>
 
         <div class="panel" style="flex: 1; display: flex; flex-direction: column;">
-            <div style="margin-bottom: 1rem; color: var(--text-muted); font-weight: 500; display: flex; justify-content: space-between;">
+            <div
+                style="margin-bottom: 1rem; color: var(--text-muted); font-weight: 500; display: flex; justify-content: space-between;">
                 <span>实时识别结果</span>
                 <span id="speakerInfo" style="color: var(--accent); font-size: 0.9rem;"></span>
             </div>
@@ -291,7 +345,7 @@
                 btnConnect.disabled = false;
                 btnConnect.classList.replace('btn-primary', 'btn-danger');
                 btnRecord.disabled = false;
-                
+
                 // Send initialization JSON per FunASR protocol
                 const initConfig = {
                     mode: "2pass",
@@ -343,7 +397,7 @@
                             partialTextEl.textContent = res.text;
                         }
                     }
-                    
+
                     // Auto scroll to bottom
                     const transcriptBox = document.getElementById('transcriptBox');
                     transcriptBox.scrollTop = transcriptBox.scrollHeight;
@@ -387,7 +441,7 @@
         // Pause / Resume
         btnPause.addEventListener('click', () => {
             if (!isRecording) return;
-            
+
             isPaused = !isPaused;
             if (isPaused) {
                 // 暂停：通知服务端断句，不关连接，不关麦克风，只是本地不发数据了
@@ -395,7 +449,7 @@
                 pauseText.textContent = '继续录音';
                 btnPause.classList.replace('btn-warning', 'btn-primary');
                 wsStatusDot.classList.remove('recording');
-                
+
                 if (websocket && websocket.readyState === WebSocket.OPEN) {
                     websocket.send(JSON.stringify({ is_speaking: false }));
                 }
@@ -405,7 +459,7 @@
                 pauseText.textContent = '暂停录音';
                 btnPause.classList.replace('btn-primary', 'btn-warning');
                 wsStatusDot.classList.add('recording');
-                
+
                 if (websocket && websocket.readyState === WebSocket.OPEN) {
                     websocket.send(JSON.stringify({ is_speaking: true }));
                 }
@@ -414,19 +468,25 @@
 
         async function startRecording() {
             try {
-                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        noiseSuppression: true,   // 噪音抑制 (办公室环境必开)
+                        echoCancellation: true,    // 回声消除
+                        autoGainControl: false     // 关闭自动增益，避免放大周围人声
+                    }
+                });
+
                 // Set sample rate strictly to 16000Hz for FunASR
                 audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
                 source = audioContext.createMediaStreamSource(mediaStream);
-                
+
                 // Using ScriptProcessorNode (deprecated but easiest for single file implementation without workers)
                 processor = audioContext.createScriptProcessor(4096, 1, 1);
-                
+
                 processor.onaudioprocess = (e) => {
                     if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
                     if (isPaused) return; // 如果暂停了，直接抛弃音频帧，不发给服务端
-                    
+
                     const inputData = e.inputBuffer.getChannelData(0);
                     // Convert Float32 to Int16
                     const pcmData = new Int16Array(inputData.length);
@@ -435,7 +495,7 @@
                         const s = Math.max(-1, Math.min(1, inputData[i]));
                         pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
                     }
-                    
+
                     // Send binary PCM directly
                     websocket.send(pcmData.buffer);
                 };
@@ -447,14 +507,14 @@
                 isPaused = false;
                 wsStatusDot.classList.add('recording');
                 recordText.textContent = '结束录音';
-                
+
                 // 显示并启用暂停按钮
                 btnPause.style.display = 'flex';
                 btnPause.disabled = false;
                 pauseIcon.textContent = '⏸️';
                 pauseText.textContent = '暂停录音';
                 btnPause.className = 'btn-warning';
-                
+
                 // Send speaking=true config again just in case
                 if (websocket && websocket.readyState === WebSocket.OPEN) {
                     websocket.send(JSON.stringify({ is_speaking: true }));
@@ -471,7 +531,7 @@
             isPaused = false;
             wsStatusDot.classList.remove('recording');
             recordText.textContent = '开始录音';
-            
+
             // 隐藏暂停按钮
             btnPause.style.display = 'none';
 
@@ -499,4 +559,5 @@
         }
     </script>
 </body>
+
 </html>

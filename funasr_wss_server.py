@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import websockets
 import time
 import numpy as np
@@ -349,7 +350,7 @@ async def ws_serve(websocket, path=None):
     global websocket_users
     websocket_users.add(websocket)
 
-    websocket.status_dict_asr = {}  # hotword 等
+    websocket.status_dict_asr = {"language": "zh", "use_itn": True}  # 锁定中文(含方言)，启用逆文本正则化
     websocket.status_dict_asr_online = {"cache": {}, "is_final": False}
     websocket.status_dict_vad = {"cache": {}, "is_final": False}
     websocket.status_dict_punc = {"cache": {}}
@@ -607,6 +608,8 @@ async def async_asr(websocket, audio_in: bytes):
     print("offline_asr, keys:", rec_result.keys())
 
     text = rec_result.get("text", "")
+    # 清洗 SenseVoiceSmall 的特殊标记 (如 <|zh|><|NEUTRAL|><|Speech|><|woitn|>)，避免污染标点模型
+    text = re.sub(r"<\|[^|]*\|>", "", text).strip()
     timestamp = rec_result.get("timestamp", None)
     sentence_info = rec_result.get("sentence_info", None)
 

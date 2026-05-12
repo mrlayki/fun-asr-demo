@@ -139,8 +139,14 @@ websocket.onmessage = (event) => {
     }
 };
 
-// 2. 采集麦克风并降采样发送
-navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+// 2. 采集麦克风并降采样发送（建议开启浏览器级降噪）
+navigator.mediaDevices.getUserMedia({
+    audio: {
+        noiseSuppression: true,   // 噪音抑制 (办公室环境强烈建议开启)
+        echoCancellation: true,    // 回声消除
+        autoGainControl: false     // 关闭自动增益，办公室环境下会放大周围人声
+    }
+}).then(stream => {
     // 强制使用 16000 采样率
     const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
     const source = audioContext.createMediaStreamSource(stream);
