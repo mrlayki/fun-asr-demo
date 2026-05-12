@@ -350,7 +350,7 @@ async def ws_serve(websocket, path=None):
     global websocket_users
     websocket_users.add(websocket)
 
-    websocket.status_dict_asr = {"language": "zh", "use_itn": True}  # 锁定中文(含方言)，启用逆文本正则化
+    websocket.status_dict_asr = {"language": "auto", "use_itn": True}  # 启用逆文本正则化
     websocket.status_dict_asr_online = {"cache": {}, "is_final": False}
     websocket.status_dict_vad = {"cache": {}, "is_final": False}
     websocket.status_dict_punc = {"cache": {}}
