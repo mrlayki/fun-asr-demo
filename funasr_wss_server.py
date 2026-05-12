@@ -238,6 +238,7 @@ from funasr import AutoModel  # noqa
 model_asr = AutoModel(
     model=args.asr_model,
     model_revision=args.asr_model_revision,
+    trust_remote_code=True,  # 👈 加上这行，允许加载新模型的自定义结构
     ngpu=args.ngpu,
     ncpu=args.ncpu,
     device=args.device,

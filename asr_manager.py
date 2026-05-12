@@ -27,7 +27,11 @@ def start_server():
         "--with", "torchaudio",
         "--with", "funasr", 
         "--with", "websockets", 
-        "--with", "modelscope"
+        "--with", "modelscope",
+        "--with", "transformers",
+        "--with", "tokenizers",
+        "--with", "zhconv",
+        "--with", "whisper_normalizer"
     ]
     
     # 确保官方 WebSocket 服务端脚本存在
@@ -51,7 +55,8 @@ def start_server():
         
     uv_args.extend([
         "python", server_script,
-        "--asr_model", "FunAudioLLM/Fun-ASR-Nano-2512",
+        # "--asr_model", "FunAudioLLM/Fun-ASR-Nano-2512",
+        "--asr_model", "iic/SenseVoiceSmall",
         "--asr_model_revision", "master",
         "--vad_model", "fsmn-vad",
         # "--punc_model", "ct-punc",
