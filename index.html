@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FunASR 本地调试终端</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --panel-bg: #1e293b;
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --danger: #ef4444;
+            --danger-hover: #dc2626;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --accent: #10b981;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 2rem;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.15), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.15), transparent 25%);
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .header {
+            text-align: center;
+            padding: 2rem 0;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(to right, #60a5fa, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+        }
+
+        .control-group {
+            display: flex;
+            gap: 1rem;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .input-group {
+            flex: 1;
+            min-width: 250px;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        input {
+            background: #0f172a;
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+        }
+
+        button {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            border: none;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary { background: var(--primary); }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-primary:disabled { background: #475569; cursor: not-allowed; opacity: 0.7; }
+
+        .btn-danger { background: var(--danger); }
+        .btn-danger:hover { background: var(--danger-hover); }
+        .btn-danger:disabled { background: #475569; cursor: not-allowed; opacity: 0.7; }
+
+        .btn-warning { background: #f59e0b; color: white; }
+        .btn-warning:hover { background: #d97706; }
+        .btn-warning:disabled { background: #475569; cursor: not-allowed; opacity: 0.7; }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            background: #1e293b;
+            border: 1px solid var(--border);
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #64748b;
+        }
+
+        .status-dot.connected { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+        .status-dot.recording { background: var(--danger); animation: pulse 1.5s infinite; }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        .transcript-box {
+            background: #0f172a;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            min-height: 250px;
+            padding: 1.5rem;
+            overflow-y: auto;
+            max-height: 400px;
+            line-height: 1.6;
+            font-size: 1.1rem;
+            position: relative;
+        }
+
+        .transcript-final { color: var(--text-main); }
+        .transcript-partial { color: var(--text-muted); }
+        
+        .empty-state {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #475569;
+            font-size: 1rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="header">
+            <h1>FunASR 本地调试终端</h1>
+            <p>实时语音识别连通性与识别率测试工具</p>
+        </div>
+
+        <div class="panel">
+            <div class="control-group">
+                <div class="input-group">
+                    <label for="wsUrl">WebSocket 服务端地址</label>
+                    <input type="text" id="wsUrl" value="ws://127.0.0.1:10095" placeholder="ws://127.0.0.1:10095">
+                </div>
+                <div class="input-group">
+                    <label for="hotwordsInput">热词 (Hotwords) [选填]</label>
+                    <input type="text" id="hotwordsInput" value="" placeholder="空格分隔(如: 阿里 达摩院) 或 JSON字典(加权重)">
+                </div>
+                <button id="btnConnect" class="btn-primary">连接服务</button>
+            </div>
+            
+            <div class="control-group" style="margin-top: 1.5rem; justify-content: space-between; align-items: center;">
+                <div class="status-badge">
+                    <div class="status-dot" id="wsStatusDot"></div>
+                    <span id="wsStatusText">未连接</span>
+                </div>
+                <div style="display: flex; gap: 1rem;">
+                    <button id="btnPause" class="btn-warning" disabled style="display: none;">
+                        <span id="pauseIcon">⏸️</span> <span id="pauseText">暂停录音</span>
+                    </button>
+                    <button id="btnRecord" class="btn-danger" disabled>
+                        <span id="recordIcon">🎤</span> <span id="recordText">开始录音</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel" style="flex: 1; display: flex; flex-direction: column;">
+            <div style="margin-bottom: 1rem; color: var(--text-muted); font-weight: 500; display: flex; justify-content: space-between;">
+                <span>实时识别结果</span>
+                <span id="speakerInfo" style="color: var(--accent); font-size: 0.9rem;"></span>
+            </div>
+            <div class="transcript-box" id="transcriptBox">
+                <div class="empty-state" id="emptyState">等待说话...</div>
+                <span class="transcript-final" id="finalText"></span>
+                <span class="transcript-partial" id="partialText"></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const wsUrlInput = document.getElementById('wsUrl');
+        const hotwordsInput = document.getElementById('hotwordsInput');
+        const btnConnect = document.getElementById('btnConnect');
+        const btnRecord = document.getElementById('btnRecord');
+        const btnPause = document.getElementById('btnPause');
+        const wsStatusDot = document.getElementById('wsStatusDot');
+        const wsStatusText = document.getElementById('wsStatusText');
+        const recordText = document.getElementById('recordText');
+        const pauseText = document.getElementById('pauseText');
+        const pauseIcon = document.getElementById('pauseIcon');
+        const finalTextEl = document.getElementById('finalText');
+        const partialTextEl = document.getElementById('partialText');
+        const emptyState = document.getElementById('emptyState');
+        const speakerInfo = document.getElementById('speakerInfo');
+
+        // State variables
+        let websocket = null;
+        let isRecording = false;
+        let isPaused = false;
+        let audioContext = null;
+        let mediaStream = null;
+        let processor = null;
+        let source = null;
+
+        // WebSocket Connection
+        btnConnect.addEventListener('click', () => {
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                websocket.close();
+                return;
+            }
+
+            const url = wsUrlInput.value.trim();
+            if (!url) return alert('请输入 WebSocket 服务端地址');
+
+            btnConnect.textContent = '连接中...';
+            btnConnect.disabled = true;
+
+            // 服务端强制要求 'binary' 子协议进行握手，否则会报 NegotiationError: missing subprotocol
+            websocket = new WebSocket(url, "binary");
+            websocket.binaryType = 'arraybuffer'; // Extremely important for sending PCM
+
+            websocket.onopen = () => {
+                wsStatusDot.classList.add('connected');
+                wsStatusText.textContent = '已连接';
+                btnConnect.textContent = '断开连接';
+                btnConnect.disabled = false;
+                btnConnect.classList.replace('btn-primary', 'btn-danger');
+                btnRecord.disabled = false;
+                
+                // Send initialization JSON per FunASR protocol
+                const initConfig = {
+                    mode: "2pass",
+                    chunk_size: [5, 10, 5],
+                    chunk_interval: 10,
+                    audio_fs: 16000,
+                    wav_name: "web_microphone",
+                    is_speaking: true
+                };
+
+                const hwVal = hotwordsInput.value.trim();
+                if (hwVal) {
+                    try {
+                        // 尝试作为 JSON 解析 (带权重的字典格式，如 {"阿司匹林": 20})
+                        initConfig.hotwords = JSON.parse(hwVal);
+                    } catch (e) {
+                        // 解析失败则作为普通空格分隔的字符串
+                        initConfig.hotwords = hwVal;
+                    }
+                }
+
+                websocket.send(JSON.stringify(initConfig));
+            };
+
+            websocket.onmessage = (event) => {
+                try {
+                    const res = JSON.parse(event.data);
+                    emptyState.style.display = 'none';
+
+                    // Update speaker info if available
+                    if (res.spk_name && res.spk_name !== 'unknown') {
+                        speakerInfo.textContent = `说话人: ${res.spk_name} (置信度: ${(res.spk_score).toFixed(2)})`;
+                    }
+
+                    if (res.is_final) {
+                        // Offline 2-pass result
+                        if (res.text) {
+                            finalTextEl.textContent += res.text;
+                        }
+                        partialTextEl.textContent = ''; // Clear partial text
+                    } else {
+                        // Online streaming result
+                        if (res.text) {
+                            partialTextEl.textContent = res.text;
+                        }
+                    }
+                    
+                    // Auto scroll to bottom
+                    const transcriptBox = document.getElementById('transcriptBox');
+                    transcriptBox.scrollTop = transcriptBox.scrollHeight;
+                } catch (e) {
+                    console.error("Failed to parse message:", e);
+                }
+            };
+
+            websocket.onclose = () => {
+                resetConnectionState();
+                if (isRecording) stopRecording();
+            };
+
+            websocket.onerror = (error) => {
+                console.error('WebSocket Error:', error);
+                resetConnectionState();
+            };
+        });
+
+        function resetConnectionState() {
+            wsStatusDot.className = 'status-dot';
+            wsStatusText.textContent = '未连接';
+            btnConnect.textContent = '连接服务';
+            btnConnect.disabled = false;
+            btnConnect.classList.replace('btn-danger', 'btn-primary');
+            btnRecord.disabled = true;
+            btnPause.style.display = 'none';
+            websocket = null;
+            isPaused = false;
+        }
+
+        // Audio Recording
+        btnRecord.addEventListener('click', async () => {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                await startRecording();
+            }
+        });
+
+        // Pause / Resume
+        btnPause.addEventListener('click', () => {
+            if (!isRecording) return;
+            
+            isPaused = !isPaused;
+            if (isPaused) {
+                // 暂停：通知服务端断句，不关连接，不关麦克风，只是本地不发数据了
+                pauseIcon.textContent = '▶️';
+                pauseText.textContent = '继续录音';
+                btnPause.classList.replace('btn-warning', 'btn-primary');
+                wsStatusDot.classList.remove('recording');
+                
+                if (websocket && websocket.readyState === WebSocket.OPEN) {
+                    websocket.send(JSON.stringify({ is_speaking: false }));
+                }
+            } else {
+                // 继续：重新告诉服务端我开始说话了，本地继续发数据
+                pauseIcon.textContent = '⏸️';
+                pauseText.textContent = '暂停录音';
+                btnPause.classList.replace('btn-primary', 'btn-warning');
+                wsStatusDot.classList.add('recording');
+                
+                if (websocket && websocket.readyState === WebSocket.OPEN) {
+                    websocket.send(JSON.stringify({ is_speaking: true }));
+                }
+            }
+        });
+
+        async function startRecording() {
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Set sample rate strictly to 16000Hz for FunASR
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                source = audioContext.createMediaStreamSource(mediaStream);
+                
+                // Using ScriptProcessorNode (deprecated but easiest for single file implementation without workers)
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
+                
+                processor.onaudioprocess = (e) => {
+                    if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
+                    if (isPaused) return; // 如果暂停了，直接抛弃音频帧，不发给服务端
+                    
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    // Convert Float32 to Int16
+                    const pcmData = new Int16Array(inputData.length);
+                    for (let i = 0; i < inputData.length; i++) {
+                        // Prevent clipping
+                        const s = Math.max(-1, Math.min(1, inputData[i]));
+                        pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+                    
+                    // Send binary PCM directly
+                    websocket.send(pcmData.buffer);
+                };
+
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+
+                isRecording = true;
+                isPaused = false;
+                wsStatusDot.classList.add('recording');
+                recordText.textContent = '结束录音';
+                
+                // 显示并启用暂停按钮
+                btnPause.style.display = 'flex';
+                btnPause.disabled = false;
+                pauseIcon.textContent = '⏸️';
+                pauseText.textContent = '暂停录音';
+                btnPause.className = 'btn-warning';
+                
+                // Send speaking=true config again just in case
+                if (websocket && websocket.readyState === WebSocket.OPEN) {
+                    websocket.send(JSON.stringify({ is_speaking: true }));
+                }
+
+            } catch (err) {
+                console.error("Microphone access denied:", err);
+                alert("无法访问麦克风，请检查浏览器权限。");
+            }
+        }
+
+        function stopRecording() {
+            isRecording = false;
+            isPaused = false;
+            wsStatusDot.classList.remove('recording');
+            recordText.textContent = '开始录音';
+            
+            // 隐藏暂停按钮
+            btnPause.style.display = 'none';
+
+            if (processor) {
+                processor.disconnect();
+                processor = null;
+            }
+            if (source) {
+                source.disconnect();
+                source = null;
+            }
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+
+            // Tell server we stopped speaking to trigger final offline transcription
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                websocket.send(JSON.stringify({ is_speaking: false }));
+            }
+        }
+    </script>
+</body>
+</html>
