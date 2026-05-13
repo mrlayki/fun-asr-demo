@@ -1,38 +1,106 @@
 import os
-import sys
 import subprocess
 import shutil
 
-# 设置局部缓存目录，存放在当前目录的 temp_asr_models 文件夹下
-CACHE_DIR = os.path.join(os.getcwd(), "temp_asr_models")
-
 import platform
 
+
+def _cache_dir() -> str:
+    """魔搭缓存根目录：优先读环境变量（Docker / 运维注入），否则为当前工作目录下 temp_asr_models。"""
+    return os.path.abspath(
+        os.environ.get("MODELSCOPE_CACHE", os.path.join(os.getcwd(), "temp_asr_models"))
+    )
+
+
+def _default_asr_model() -> str:
+    return os.environ.get("ASR_MODEL", "iic/SenseVoiceSmall")
+
+
+def _default_asr_revision() -> str:
+    return os.environ.get("ASR_MODEL_REVISION", "master")
+
+
+def _need_funasr_nano_extras() -> bool:
+    """Fun-ASR-Nano 等需 transformers 等依赖；宿主机 SenseVoice 默认不装以减轻体积。"""
+    if os.environ.get("ASR_UV_EXTRA_DEPS", "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    mid = _default_asr_model()
+    return "Fun-ASR" in mid or "FunAudioLLM/Fun-ASR" in mid
+
+
+def _uv_python() -> str:
+    """uv 使用的 Python 版本；新版 funasr 要求 >=3.11。"""
+    return os.environ.get("ASR_UV_PYTHON", "3.11").strip() or "3.11"
+
+
 def start_server():
+    cache_dir = _cache_dir()
+    asr_model = _default_asr_model()
+    asr_revision = _default_asr_revision()
+
     print(f"\n>>> 即将使用 uv 隔离环境启动服务...")
-    print(f"模型文件将统一缓存在当前目录: {CACHE_DIR}")
-    print("⚠️ 提醒: 初次启动需要下载约 2.3GB 的模型文件，请耐心等待进度条走完...")
+    print(f"模型文件将统一缓存在: {cache_dir}")
+    print(f"离线 ASR 模型: {asr_model} (revision={asr_revision})")
+    if "SenseVoice" in asr_model:
+        print("⚠️ 提醒: 初次启动 SenseVoice 等约需下载数 GB 模型，请耐心等待进度条走完...")
+    elif "Fun-ASR" in asr_model or "FunAudioLLM" in asr_model:
+        print("⚠️ 提醒: Fun-ASR-Nano 权重与依赖较大，初次拉取请预留磁盘与网络...")
+    else:
+        print("⚠️ 提醒: 初次启动可能需要下载模型，请耐心等待...")
     print("🛑 若要停止服务，请按 Ctrl+C。\n")
-    
-    # 设置环境变量，强制指定魔搭社区的模型下载路径
+
+    # 子进程与 ModelScope 共用同一缓存根目录（与宿主机 volume 映射路径一致即可命中已有文件）
     env = os.environ.copy()
-    env["MODELSCOPE_CACHE"] = CACHE_DIR
-    
+    env["MODELSCOPE_CACHE"] = cache_dir
+
+    uv_py = _uv_python()
     # 动态构建 uv 启动参数
     uv_args = [
-        "uv", "run",
-        "--python", "3.10",
-        "--with", "numpy<2",
-        "--with", "torch",
-        "--with", "torchaudio",
-        "--with", "funasr", 
-        "--with", "websockets", 
-        "--with", "modelscope",
-        # "--with", "transformers",
-        # "--with", "tokenizers",
-        # "--with", "zhconv",
-        # "--with", "whisper_normalizer"
+        "uv",
+        "run",
+        "--python",
+        uv_py,
+        "--with",
+        "numpy<2",
+        "--with",
+        "torch",
+        "--with",
+        "torchaudio",
+        "--with",
+        "funasr",
+        "--with",
+        "websockets",
+        "--with",
+        "modelscope",
     ]
+    if _need_funasr_nano_extras():
+        # Fun-ASR-Nano / 文档与模型仓常见依赖（推理 + 日文 g2p 等）；SenseVoice 默认不装
+        uv_args.extend(
+            [
+                "--with",
+                "transformers",
+                "--with",
+                "tokenizers",
+                "--with",
+                "zhconv",
+                "--with",
+                "whisper_normalizer",
+                "--with",
+                "pyopenjtalk-plus",
+                "--with",
+                "compute-wer",
+                "--with",
+                "huggingface_hub",
+                "--with",
+                "scipy",
+                "--with",
+                "soundfile",
+                "--with",
+                "tiktoken",
+                "--with",
+                "openai-whisper",
+            ]
+        )
     
     # 确保官方 WebSocket 服务端脚本存在
     server_script = "funasr_wss_server.py"
@@ -50,21 +118,43 @@ def start_server():
     system = platform.system()
     machine = platform.machine()
     if system == "Darwin" and machine == "x86_64":
-        print("💡 检测到 Mac Intel 平台，自动锁定 llvmlite<=0.45.0 以避免底层源码编译报错...")
+        print("💡 检测到 Mac Intel 自动锁定 llvmlite<=0.45.0 以避免底层源码编译报错...")
         uv_args.extend(["--with", "llvmlite<=0.45.0"])
         
-    uv_args.extend([
-        "python", server_script,
-        # "--asr_model", "FunAudioLLM/Fun-ASR-Nano-2512",
-        "--asr_model", "iic/SenseVoiceSmall",
-        "--asr_model_revision", "master",
-        "--vad_model", "fsmn-vad",
-        # "--punc_model", "ct-punc",
-        "--host", "0.0.0.0",
-        "--port", "10095",
-        "--certfile", "",
-        "--keyfile", ""
-    ])
+    server_cmd = [
+        "python",
+        server_script,
+        "--asr_model",
+        asr_model,
+        "--asr_model_revision",
+        asr_revision,
+        "--vad_model",
+        os.environ.get("ASR_VAD_MODEL", "fsmn-vad"),
+        "--host",
+        os.environ.get("ASR_HOST", "0.0.0.0"),
+        "--port",
+        os.environ.get("ASR_PORT", "10095"),
+        "--certfile",
+        os.environ.get("ASR_CERTFILE", ""),
+        "--keyfile",
+        os.environ.get("ASR_KEYFILE", ""),
+    ]
+    if os.environ.get("ASR_PUNC_MODEL"):
+        server_cmd.extend(["--punc_model", os.environ["ASR_PUNC_MODEL"]])
+    if "ASR_DEVICE" in os.environ:
+        server_cmd.extend(["--device", os.environ["ASR_DEVICE"]])
+    if "ASR_NGPU" in os.environ:
+        server_cmd.extend(["--ngpu", os.environ["ASR_NGPU"]])
+    if "ASR_NCPU" in os.environ:
+        server_cmd.extend(["--ncpu", os.environ["ASR_NCPU"]])
+    if "ASR_MODEL_ONLINE" in os.environ:
+        server_cmd.extend(["--asr_model_online", os.environ["ASR_MODEL_ONLINE"]])
+    if "ASR_MODEL_ONLINE_REVISION" in os.environ:
+        server_cmd.extend(["--asr_model_online_revision", os.environ["ASR_MODEL_ONLINE_REVISION"]])
+    if "ASR_VAD_MODEL_REVISION" in os.environ:
+        server_cmd.extend(["--vad_model_revision", os.environ["ASR_VAD_MODEL_REVISION"]])
+
+    uv_args.extend(server_cmd)
     
     try:
         # 使用 uv run，它会自动创建临时虚拟环境、安装依赖并运行，不会污染全局系统环境
@@ -78,11 +168,12 @@ def start_server():
 
 def clean_up():
     print(f"\n>>> 准备清理部署产生的模型文件...")
-    if os.path.exists(CACHE_DIR):
+    cache_dir = _cache_dir()
+    if os.path.exists(cache_dir):
         try:
-            shutil.rmtree(CACHE_DIR)
-            print(f"✅ 成功删除缓存目录: {CACHE_DIR}")
-            print(f"🎉 已为您释放了约 2.3GB 的磁盘空间！")
+            shutil.rmtree(cache_dir)
+            print(f"✅ 成功删除缓存目录: {cache_dir}")
+            print(f"🎉 已为您释放了模型缓存占用的磁盘空间！")
         except Exception as e:
             print(f"❌ 删除目录失败，请检查文件是否被占用: {e}")
     else:
@@ -94,7 +185,7 @@ def main():
         print(" 🎙️  FunASR 极简跨平台管理脚本 (uv 加持版)")
         print("="*40)
         print("  [1] 🚀 自动准备环境并启动服务 (使用 uv)")
-        print("  [2] 🧹 清理瘦身 (彻底删除 2.3GB 模型文件)")
+        print("  [2] 🧹 清理瘦身 (删除 MODELSCOPE_CACHE 下已缓存的模型文件)")
         print("  [0] 🚪 退出脚本")
         print("="*40)
         if os.environ.get("ASR_AUTO_START") == "true":

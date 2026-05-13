@@ -1,0 +1,30 @@
+# Mac 本机 Docker（无 NVIDIA）：CPU 跑 Fun-ASR-Nano 做依赖/启动验证。
+# 用法（在项目根目录）：
+#   docker compose -f docker-compose.mac.yml up --build
+# 使用宿主机已下载的模型缓存，避免重复下载（默认把当前目录下的 temp_asr_models 挂进容器）：
+#   可选建 .env 写：ASR_MODELSCOPE_HOST_PATH=/Users/你的用户名/Desktop/www/python/asr/temp_asr_models
+# Apple Silicon 若拉 amd64 镜像异常，可在下面 service 上增加：platform: linux/amd64
+
+services:
+  funasr-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.mac
+      # 复用本机已有镜像、避免再拉 ubuntu（镜像名以你本机 docker images 为准）：
+      # args:
+      #   BASE_IMAGE: asr_asr-service:latest
+    container_name: funasr_server_mac_cpu
+    ports:
+      - "10095:10095"
+    volumes:
+      # 与宿主机 uv 运行时 MODELSCOPE_CACHE 指向的目录一致，即可复用已下载权重
+      - ${ASR_MODELSCOPE_HOST_PATH:-./temp_asr_models}:/app/temp_asr_models
+    environment:
+      - MODELSCOPE_CACHE=/app/temp_asr_models
+      - ASR_AUTO_START=true
+      - ASR_MODEL=FunAudioLLM/Fun-ASR-Nano-2512
+      - ASR_MODEL_REVISION=master
+      - ASR_DEVICE=cpu
+      - ASR_NGPU=0
+      # 流式在线 ASR 仍用默认 paraformer；若你宿主机缓存里 revision 与默认不一致可在这里覆盖
+      # - ASR_MODEL_ONLINE_REVISION=master

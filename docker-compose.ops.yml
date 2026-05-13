@@ -1,11 +1,13 @@
-# 默认等价于运维 GPU 编排（与 docker-compose.ops.yml 对齐）。
-# Mac 本机无 NVIDIA 时请使用：docker compose -f docker-compose.mac.yml up --build
-version: "3.8"
+# 运维环境：Linux + NVIDIA Container Toolkit，CUDA 推理。
+# 用法：
+#   docker compose -f docker-compose.ops.yml up --build
+# 可在外层 .env 覆盖模型名，例如仍用 SenseVoice：
+#   ASR_MODEL=iic/SenseVoiceSmall
 
 services:
   funasr-service:
     build: .
-    container_name: funasr_server
+    container_name: funasr_server_ops
     restart: always
     ports:
       - "${ASR_PUBLISH_PORT:-10095}:10095"

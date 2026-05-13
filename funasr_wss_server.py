@@ -234,18 +234,53 @@ def save_offline_wav_segment_sync(websocket, audio_bytes: bytes, reason: str = "
 print("model loading")
 from funasr import AutoModel  # noqa
 
+
+def _funasr_nano_remote_code(model_id: str) -> str | None:
+    """Fun-ASR-Nano 需在 AutoModel 中注册 FunASRNano，必须提供 model.py 路径。"""
+    mid = (model_id or "").strip()
+    if "Fun-ASR" not in mid and "FunAudioLLM/Fun-ASR" not in mid:
+        return None
+    env_p = os.environ.get("ASR_REMOTE_CODE", "").strip()
+    candidates = []
+    if env_p:
+        candidates.append(os.path.abspath(env_p))
+    root = os.path.dirname(os.path.abspath(__file__))
+    candidates.append(os.path.join(root, "model.py"))
+    cache = os.environ.get("MODELSCOPE_CACHE", os.path.join(root, "temp_asr_models"))
+    cache = os.path.abspath(cache)
+    rel = mid.replace("/", os.sep)
+    candidates.extend(
+        [
+            os.path.join(cache, "models", rel, "model.py"),
+            os.path.join(cache, rel, "model.py"),
+        ]
+    )
+    for p in candidates:
+        if p and os.path.isfile(p):
+            print(f"[offline ASR] Fun-ASR remote_code={p}", flush=True)
+            return p
+    print(
+        "[offline ASR] ERROR: 未找到 Fun-ASR 的 model.py，请设置 ASR_REMOTE_CODE 或在镜像/目录中包含 model.py（与魔搭缓存路径一致）。",
+        flush=True,
+    )
+    return None
+
+
 # ====== 离线 ASR ======
-model_asr = AutoModel(
+_offline_asr_kw = dict(
     model=args.asr_model,
     model_revision=args.asr_model_revision,
-    trust_remote_code=True,  # 👈 加上这行，允许加载新模型的自定义结构
-    # remote_code="./model.py",
+    trust_remote_code=True,
     ngpu=args.ngpu,
     ncpu=args.ncpu,
     device=args.device,
     disable_pbar=True,
     disable_log=True,
 )
+_rc = _funasr_nano_remote_code(args.asr_model)
+if _rc:
+    _offline_asr_kw["remote_code"] = _rc
+model_asr = AutoModel(**_offline_asr_kw)
 
 # streaming asr
 model_asr_streaming = AutoModel(

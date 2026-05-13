@@ -1,3 +1,4 @@
+# 运维 Linux + NVIDIA GPU 用；Mac 或无 GPU 请用 Dockerfile.mac（见 docker-compose.mac.yml）
 FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
 
 # 设置时区和非交互模式
@@ -22,6 +23,8 @@ WORKDIR /app
 # 拷贝核心文件 (包括我们修复过的服务端脚本)
 COPY asr_manager.py .
 COPY funasr_wss_server.py .
+COPY model.py ctc.py ./
+COPY tools/ ./tools/
 
 # 设置环境变量，让脚本直接进入非交互式启动模式
 ENV ASR_AUTO_START=true
