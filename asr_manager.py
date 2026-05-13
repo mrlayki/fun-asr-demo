@@ -60,19 +60,32 @@ def start_server():
         "run",
         "--python",
         uv_py,
-        "--with",
-        "numpy<2",
-        "--with",
-        "torch",
-        "--with",
-        "torchaudio",
-        "--with",
-        "funasr",
-        "--with",
-        "websockets",
-        "--with",
-        "modelscope",
     ]
+    if os.environ.get("ASR_DEVICE", "").strip().lower() == "cpu":
+        uv_args.extend(
+            [
+                "--index-url",
+                "https://download.pytorch.org/whl/cpu",
+                "--extra-index-url",
+                "https://pypi.org/simple",
+            ]
+        )
+    uv_args.extend(
+        [
+            "--with",
+            "numpy<2",
+            "--with",
+            "torch",
+            "--with",
+            "torchaudio",
+            "--with",
+            "funasr",
+            "--with",
+            "websockets",
+            "--with",
+            "modelscope",
+        ]
+    )
     if _need_funasr_nano_extras():
         # Fun-ASR-Nano / 文档与模型仓常见依赖（推理 + 日文 g2p 等）；SenseVoice 默认不装
         uv_args.extend(
@@ -158,7 +171,9 @@ def start_server():
     
     try:
         # 使用 uv run，它会自动创建临时虚拟环境、安装依赖并运行，不会污染全局系统环境
-        subprocess.run(uv_args, env=env)
+        completed = subprocess.run(uv_args, env=env)
+        if completed.returncode:
+            raise SystemExit(completed.returncode)
     except KeyboardInterrupt:
         print("\n✅ 检测到退出指令(Ctrl+C)，服务已正常关闭。")
     except FileNotFoundError:

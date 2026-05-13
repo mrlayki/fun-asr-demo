@@ -30,6 +30,10 @@ COPY funasr_wss_server.py .
 COPY model.py ctc.py ./
 COPY tools/ ./tools/
 
+# 复用 asr_asr-service 等基底时，/app 常残留 hatch 的 pyproject.toml / uv.lock / .venv；
+# 不清理则 `uv run` 会把 /app 当成「asr-service」工程按锁文件 sync，与 asr_manager 里动态 --with 冲突，子进程易中途退出、日志里菜单重复出现。
+RUN rm -rf /app/.venv && rm -f /app/pyproject.toml /app/uv.lock || true
+
 ENV ASR_AUTO_START=true
 
 EXPOSE 10095

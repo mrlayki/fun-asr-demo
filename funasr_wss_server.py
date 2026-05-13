@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import traceback
 import websockets
 import time
 import numpy as np
@@ -231,7 +232,36 @@ def save_offline_wav_segment_sync(websocket, audio_bytes: bytes, reason: str = "
         print(f"[SAVE_OFFLINE_SEG] failed: {e}")
 
 
-print("model loading")
+print("model loading", flush=True)
+
+# 必须在 import AutoModel 之前完成：否则 funasr 导入链里会先注册有问题的 SenseVoiceTokenizer。
+from funasr.register import tables  # noqa
+import funasr.tokenizer.whisper_tokenizer as _wtok_mod  # noqa
+
+
+def _SenseVoiceTokenizer_fixed(**kwargs):
+    from funasr.models.sense_voice.whisper_lib.tokenizer import get_tokenizer
+
+    language = kwargs.get("language", None)
+    task = kwargs.get("task", None)
+    is_multilingual = kwargs.get("is_multilingual", True)
+    num_languages = kwargs.get("num_languages", 8749)
+    vocab_path = kwargs.get("vocab_path", None)
+    return get_tokenizer(
+        multilingual=is_multilingual,
+        num_languages=num_languages,
+        language=language,
+        task=task,
+        vocab_path=vocab_path,
+    )
+
+
+_wtok_mod.SenseVoiceTokenizer = _SenseVoiceTokenizer_fixed
+try:
+    tables.tokenizer_classes["SenseVoiceTokenizer"] = _SenseVoiceTokenizer_fixed
+except Exception as _e:
+    print(f"[WARN] 无法覆盖 tables.tokenizer_classes['SenseVoiceTokenizer']: {_e}", flush=True)
+
 from funasr import AutoModel  # noqa
 
 
@@ -280,52 +310,93 @@ _offline_asr_kw = dict(
 _rc = _funasr_nano_remote_code(args.asr_model)
 if _rc:
     _offline_asr_kw["remote_code"] = _rc
-model_asr = AutoModel(**_offline_asr_kw)
+
+try:
+    print("[load] offline ASR (Fun-ASR / SenseVoice) ...", flush=True)
+    model_asr = AutoModel(**_offline_asr_kw)
+    print("[load] offline ASR ok", flush=True)
+except BaseException:
+    import traceback
+
+    traceback.print_exc()
+    raise
 
 # streaming asr
-model_asr_streaming = AutoModel(
-    model=args.asr_model_online,
-    model_revision=args.asr_model_online_revision,
-    ngpu=args.ngpu,
-    ncpu=args.ncpu,
-    device=args.device,
-    disable_pbar=True,
-    disable_log=True,
-)
-
-# vad
-model_vad = AutoModel(
-    model=args.vad_model,
-    model_revision=args.vad_model_revision,
-    ngpu=args.ngpu,
-    ncpu=args.ncpu,
-    device=args.device,
-    disable_pbar=True,
-    disable_log=True,
-)
-
-# punc
-if args.punc_model != "":
-    model_punc = AutoModel(
-        model=args.punc_model,
-        model_revision=args.punc_model_revision,
+try:
+    print("[load] streaming ASR ...", flush=True)
+    model_asr_streaming = AutoModel(
+        model=args.asr_model_online,
+        model_revision=args.asr_model_online_revision,
         ngpu=args.ngpu,
         ncpu=args.ncpu,
         device=args.device,
         disable_pbar=True,
         disable_log=True,
     )
+    print("[load] streaming ASR ok", flush=True)
+except BaseException:
+    import traceback
+
+    traceback.print_exc()
+    raise
+
+# vad
+try:
+    print("[load] VAD ...", flush=True)
+    model_vad = AutoModel(
+        model=args.vad_model,
+        model_revision=args.vad_model_revision,
+        ngpu=args.ngpu,
+        ncpu=args.ncpu,
+        device=args.device,
+        disable_pbar=True,
+        disable_log=True,
+    )
+    print("[load] VAD ok", flush=True)
+except BaseException:
+    import traceback
+
+    traceback.print_exc()
+    raise
+
+# punc
+if args.punc_model != "":
+    try:
+        print("[load] punc ...", flush=True)
+        model_punc = AutoModel(
+            model=args.punc_model,
+            model_revision=args.punc_model_revision,
+            ngpu=args.ngpu,
+            ncpu=args.ncpu,
+            device=args.device,
+            disable_pbar=True,
+            disable_log=True,
+        )
+        print("[load] punc ok", flush=True)
+    except BaseException:
+        import traceback
+
+        traceback.print_exc()
+        raise
 else:
     model_punc = None
 
 # sv
-model_sv = AutoModel(
-    model="iic/speech_campplus_sv_zh-cn_16k-common",
-    ngpu=args.ngpu,
-    device=args.device,
-    disable_pbar=True,
-    disable_log=True,
-)
+try:
+    print("[load] speaker verification ...", flush=True)
+    model_sv = AutoModel(
+        model="iic/speech_campplus_sv_zh-cn_16k-common",
+        ngpu=args.ngpu,
+        device=args.device,
+        disable_pbar=True,
+        disable_log=True,
+    )
+    print("[load] speaker verification ok", flush=True)
+except BaseException:
+    import traceback
+
+    traceback.print_exc()
+    raise
 
 print("model loaded! (now supports multi-client with non-blocking inference)")
 
@@ -497,8 +568,11 @@ async def ws_serve(websocket, path=None):
                     audio_in = b"".join(frames_asr_online)
                     try:
                         await async_asr_online(websocket, audio_in)
-                    except Exception:
-                        print(f"error in asr streaming, {websocket.status_dict_asr_online}")
+                    except Exception as e:
+                        # 勿打印整个 status_dict_asr_online：cache 内有巨量 tensor，淹没真实报错
+                        print(f"error in asr streaming: {e}", flush=True)
+                        traceback.print_exc()
+                        websocket.status_dict_asr_online["cache"] = {}
                 frames_asr_online = []
 
             if speech_start:
@@ -543,7 +617,8 @@ async def ws_serve(websocket, path=None):
                     try:
                         await async_asr(websocket, audio_in)
                     except Exception as e:
-                        print("error in asr offline:", e)
+                        print("error in asr offline:", e, flush=True)
+                        traceback.print_exc()
 
                 frames_asr = []
                 speech_start = False
@@ -717,9 +792,10 @@ async def async_asr(websocket, audio_in: bytes):
 
         try:
             await websocket.send(json.dumps(message, ensure_ascii=False))
+        except websockets.ConnectionClosed:
+            pass
         except Exception as e:
-            print("send json failed:", e)
-            print("message types:", {k: type(v) for k, v in message.items()})
+            print("send json failed:", e, flush=True)
     else:
         message = {
             "mode": mode,
@@ -729,7 +805,10 @@ async def async_asr(websocket, audio_in: bytes):
             "wav_name": websocket.wav_name,
             "is_final": True,
         }
-        await websocket.send(json.dumps(message, ensure_ascii=False))
+        try:
+            await websocket.send(json.dumps(message, ensure_ascii=False))
+        except websockets.ConnectionClosed:
+            pass
 
 
 async def async_asr_online(websocket, audio_in: bytes):
@@ -761,7 +840,10 @@ async def async_asr_online(websocket, audio_in: bytes):
                 websocket.status_dict_asr_online.get("is_final", False) or (not websocket.is_speaking)
             ),
         }
-        await websocket.send(json.dumps(message, ensure_ascii=False))
+        try:
+            await websocket.send(json.dumps(message, ensure_ascii=False))
+        except websockets.ConnectionClosed:
+            pass
 
 
 # ===================== 启动服务 =====================

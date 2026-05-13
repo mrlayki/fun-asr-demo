@@ -1,6 +1,9 @@
 # Mac 本机 Docker（无 NVIDIA）：CPU 跑 Fun-ASR-Nano 做依赖/启动验证。
 # 用法（在项目根目录）：
 #   docker compose -f docker-compose.mac.yml up --build
+# 业务代码已绑定挂载：宿主机改 model.py / funasr_wss_server.py 等后只需：
+#   docker compose -f docker-compose.mac.yml restart funasr-service
+# 无需每次 rebuild（依赖变更或 Dockerfile 变更时再 build）。
 # 使用宿主机已下载的模型缓存，避免重复下载（默认把当前目录下的 temp_asr_models 挂进容器）：
 #   可选建 .env 写：ASR_MODELSCOPE_HOST_PATH=/Users/你的用户名/Desktop/www/python/asr/temp_asr_models
 # Apple Silicon 若拉 amd64 镜像异常，可在下面 service 上增加：platform: linux/amd64
@@ -19,7 +22,14 @@ services:
     volumes:
       # 与宿主机 uv 运行时 MODELSCOPE_CACHE 指向的目录一致，即可复用已下载权重
       - ${ASR_MODELSCOPE_HOST_PATH:-./temp_asr_models}:/app/temp_asr_models
+      # 覆盖镜像内 COPY 的业务文件：宿主机或 docker exec 改 /app 下对应路径后 restart 即生效
+      - ./asr_manager.py:/app/asr_manager.py
+      - ./funasr_wss_server.py:/app/funasr_wss_server.py
+      - ./model.py:/app/model.py
+      - ./ctc.py:/app/ctc.py
+      - ./tools:/app/tools
     environment:
+      - PYTHONUNBUFFERED=1
       - MODELSCOPE_CACHE=/app/temp_asr_models
       - ASR_AUTO_START=true
       - ASR_MODEL=FunAudioLLM/Fun-ASR-Nano-2512

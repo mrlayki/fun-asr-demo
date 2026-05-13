@@ -2,6 +2,8 @@ import logging
 import os
 import random
 import re
+
+import numpy as np
 import string
 import time
 import traceback
@@ -281,6 +283,10 @@ class FunASRNano(nn.Module):
         return encoder_out, encoder_out_lens
 
     def data_template(self, data):
+        if data is None:
+            raise ValueError(
+                "FunASRNano.data_template: data is None（通常是样本格式不对或 generate_chatml 未支持的音频类型）"
+            )
         system, user, assistant = [], [], []
         for i, item in enumerate(data):
             role = item["role"]
@@ -562,11 +568,26 @@ class FunASRNano(nn.Module):
             prompt += "，不进行文本规整"
         return prompt + "："
 
-    def generate_chatml(self, prompt: str, data: Union[str, torch.Tensor]):
+    def generate_chatml(self, prompt: str, data: Union[str, torch.Tensor, bytes, bytearray]):
         if isinstance(data, str):
             return [
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": f"{prompt}<|startofspeech|>!{data}<|endofspeech|>"},
+                {"role": "assistant", "content": "null"},
+            ]
+        elif isinstance(data, (bytes, bytearray)):
+            # WebSocket / FunASR：整块 PCM int16 字节流；若不单独包装成 list，
+            # inference 里 `for x in data_in` 会对 bytes 逐字节迭代，导致本函数收到 int、返回 None，
+            # 最终在 data_template(None) 上报「NoneType is not iterable」。
+            pcm = np.frombuffer(bytes(data), dtype=np.int16).astype(np.float32) / 32768.0
+            t = torch.from_numpy(pcm.copy())
+            return [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {
+                    "role": "user",
+                    "content": f"{prompt}<|startofspeech|>!!<|endofspeech|>",
+                    "audio": t,
+                },
                 {"role": "assistant", "content": "null"},
             ]
         elif isinstance(data, torch.Tensor):
@@ -579,6 +600,16 @@ class FunASRNano(nn.Module):
                 },
                 {"role": "assistant", "content": "null"},
             ]
+        elif isinstance(data, np.ndarray):
+            # FunASR 前置有时会把音频转成 ndarray（float 波形或 int16）
+            arr = np.ascontiguousarray(data)
+            if arr.dtype == np.int16:
+                arr = arr.astype(np.float32) / 32768.0
+            else:
+                arr = arr.astype(np.float32)
+            arr = np.squeeze(arr)
+            return self.generate_chatml(prompt, torch.from_numpy(arr.copy()))
+        raise TypeError(f"FunASRNano.generate_chatml: unsupported data type {type(data)}")
 
     def inference(
         self,
@@ -589,9 +620,22 @@ class FunASRNano(nn.Module):
         frontend=None,
         **kwargs,
     ):
-        prompt = self.get_prompt(
-            kwargs.get("hotwords", []), kwargs.get("language", None), kwargs.get("itn", True)
-        )
+        # WebSocket 侧常用 language=auto；Nano 提示里「语音转写成auto」无意义，按 None 处理
+        lang = kwargs.get("language", None)
+        if lang is not None and str(lang).strip().lower() in ("auto", "none", ""):
+            lang = None
+        hw = kwargs.get("hotwords")
+        if hw is None:
+            hw = kwargs.get("hotword")
+        if hw is None:
+            hw = []
+        elif isinstance(hw, str):
+            hw = [hw] if hw.strip() else []
+
+        prompt = self.get_prompt(hw, lang, kwargs.get("itn", True))
+        # 单条样本（尤其 bytes PCM）须包成 list，避免对 bytes 按字节迭代。
+        if not isinstance(data_in, (list, tuple)):
+            data_in = [data_in]
         data_in = [self.generate_chatml(prompt, data) for data in data_in]
 
         if key is None:
