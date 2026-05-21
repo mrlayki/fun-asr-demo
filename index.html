@@ -241,6 +241,52 @@
             font-size: 1rem;
             text-align: center;
         }
+
+        .speaker-segment {
+            margin-bottom: 0.75rem;
+            padding: 0.6rem 0.8rem;
+            border-left: 3px solid var(--primary);
+            background: rgba(59, 130, 246, 0.06);
+            border-radius: 0 8px 8px 0;
+            animation: segmentIn 0.3s ease;
+        }
+
+        @keyframes segmentIn {
+            from {
+                opacity: 0;
+                transform: translateY(4px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .speaker-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-bottom: 0.3rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .speaker-name {
+            font-weight: 600;
+        }
+
+        .speaker-score {
+            padding: 0.1rem 0.45rem;
+            border-radius: 4px;
+            font-size: 0.72rem;
+            font-weight: 500;
+        }
+
+        .speaker-text {
+            color: var(--text-main);
+            line-height: 1.6;
+        }
     </style>
 </head>
 
@@ -256,7 +302,8 @@
             <div class="control-group">
                 <div class="input-group">
                     <label for="wsUrl">WebSocket 服务端地址</label>
-                    <input type="text" id="wsUrl" value="ws://127.0.0.1:10095" placeholder="ws://127.0.0.1:10095">
+                    <input type="text" id="wsUrl" value="ws://10.123.234.226:10095"
+                        placeholder="ws://10.123.234.226:10095">
                 </div>
                 <div class="input-group">
                     <label for="hotwordsInput">热词 (Hotwords) [选填]</label>
@@ -305,7 +352,7 @@
             </div>
             <div class="transcript-box" id="transcriptBox">
                 <div class="empty-state" id="emptyState">等待说话...</div>
-                <span class="transcript-final" id="finalText"></span>
+                <div id="finalText"></div>
                 <span class="transcript-partial" id="partialText"></span>
             </div>
         </div>
@@ -348,6 +395,15 @@
         let mediaStream = null;
         let processor = null;
         let source = null;
+        let lastSpeakerName = null;   // Track last speaker for grouping
+        const speakerColorMap = {};   // Map speaker name -> HSL hue
+        let speakerColorCounter = 0;
+
+        // Generate a visually distinct hue for each new speaker using golden angle
+        function getSpeakerHue(index) {
+            // Golden angle ≈ 137.508° ensures maximum hue separation
+            return (index * 137.508) % 360;
+        }
 
         // WebSocket Connection
         btnConnect.addEventListener('click', () => {
@@ -408,15 +464,51 @@
                         res.text = res.text.replace(/<\|[^|]*\|>/g, '').trim();
                     }
 
-                    // Update speaker info if available
+                    // Update speaker info header
                     if (res.spk_name && res.spk_name !== 'unknown') {
-                        speakerInfo.textContent = `说话人: ${res.spk_name} (置信度: ${(res.spk_score).toFixed(2)})`;
+                        speakerInfo.textContent = `当前: ${res.spk_name} (置信度: ${(res.spk_score).toFixed(2)})`;
                     }
 
                     if (res.is_final) {
-                        // Offline 2-pass result
+                        // Offline 2-pass result — render with speaker info
                         if (res.text) {
-                            finalTextEl.textContent += res.text;
+                            const spkName = (res.spk_name && res.spk_name !== 'unknown') ? res.spk_name : null;
+                            const spkScore = (typeof res.spk_score === 'number') ? res.spk_score : null;
+
+                            if (spkName) {
+                                // Assign a hue to this speaker
+                                if (!(spkName in speakerColorMap)) {
+                                    speakerColorMap[spkName] = getSpeakerHue(speakerColorCounter);
+                                    speakerColorCounter++;
+                                }
+                                const hue = speakerColorMap[spkName];
+
+                                if (spkName === lastSpeakerName) {
+                                    // Same speaker — append to the last segment
+                                    const lastSegment = finalTextEl.querySelector('.speaker-segment:last-child .speaker-text');
+                                    if (lastSegment) {
+                                        lastSegment.textContent += res.text;
+                                        // Update score badge on the same segment if changed
+                                        const lastSeg = finalTextEl.querySelector('.speaker-segment:last-child');
+                                        if (lastSeg && spkScore !== null) {
+                                            const badge = lastSeg.querySelector('.speaker-score');
+                                            if (badge) badge.textContent = `置信度 ${spkScore.toFixed(2)}`;
+                                        }
+                                    } else {
+                                        appendSpeakerSegment(spkName, spkScore, hue, res.text);
+                                    }
+                                } else {
+                                    // New speaker — create a new segment
+                                    appendSpeakerSegment(spkName, spkScore, hue, res.text);
+                                    lastSpeakerName = spkName;
+                                }
+                            } else {
+                                // No speaker info — plain text fallback
+                                const plainSpan = document.createElement('span');
+                                plainSpan.className = 'transcript-final';
+                                plainSpan.textContent = res.text;
+                                finalTextEl.appendChild(plainSpan);
+                            }
                         }
                         partialTextEl.textContent = ''; // Clear partial text
                     } else {
@@ -433,6 +525,44 @@
                     console.error("Failed to parse message:", e);
                 }
             };
+
+            function appendSpeakerSegment(name, score, hue, text) {
+                const mainColor = `hsl(${hue}, 70%, 65%)`;
+                const lightColor = `hsl(${hue}, 60%, 80%)`;
+                const bgColor = `hsla(${hue}, 70%, 65%, 0.06)`;
+                const badgeBg = `hsla(${hue}, 70%, 65%, 0.15)`;
+
+                const seg = document.createElement('div');
+                seg.className = 'speaker-segment';
+                seg.style.borderLeftColor = mainColor;
+                seg.style.background = bgColor;
+
+                const label = document.createElement('div');
+                label.className = 'speaker-label';
+
+                const nameEl = document.createElement('span');
+                nameEl.className = 'speaker-name';
+                nameEl.style.color = mainColor;
+                nameEl.textContent = name;
+                label.appendChild(nameEl);
+
+                if (score !== null) {
+                    const scoreEl = document.createElement('span');
+                    scoreEl.className = 'speaker-score';
+                    scoreEl.style.background = badgeBg;
+                    scoreEl.style.color = lightColor;
+                    scoreEl.textContent = `置信度 ${score.toFixed(2)}`;
+                    label.appendChild(scoreEl);
+                }
+
+                const textEl = document.createElement('div');
+                textEl.className = 'speaker-text';
+                textEl.textContent = text;
+
+                seg.appendChild(label);
+                seg.appendChild(textEl);
+                finalTextEl.appendChild(seg);
+            }
 
             websocket.onclose = () => {
                 resetConnectionState();
