@@ -166,6 +166,9 @@ def start_server():
         server_cmd.extend(["--asr_model_online_revision", os.environ["ASR_MODEL_ONLINE_REVISION"]])
     if "ASR_VAD_MODEL_REVISION" in os.environ:
         server_cmd.extend(["--vad_model_revision", os.environ["ASR_VAD_MODEL_REVISION"]])
+    if "ASR_MAX_SEGMENT_MS" in os.environ:
+        # 超长语音兜底强制切分阈值(ms)：大段无停顿音频最多累计这么久就送一次离线识别，0 关闭
+        server_cmd.extend(["--max_segment_ms", os.environ["ASR_MAX_SEGMENT_MS"]])
 
     uv_args.extend(server_cmd)
     
