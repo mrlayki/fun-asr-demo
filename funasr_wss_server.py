@@ -127,6 +127,19 @@ parser.add_argument(
     help="Reload speaker_db.json at most once every N seconds (avoid frequent disk IO).",
 )
 
+# ====== 超长语音兜底强制切分 ======
+parser.add_argument(
+    "--max_segment_ms",
+    type=int,
+    default=15000,
+    help=(
+        "Force flush accumulated speech to offline ASR when a single speech segment "
+        "exceeds this duration (ms), even if VAD hasn't detected an end point. "
+        "Prevents long continuous audio (no long-enough silence) from never being "
+        "sent to the offline model. Set 0 to disable."
+    ),
+)
+
 args = parser.parse_args()
 
 websocket_users = set()
@@ -470,6 +483,7 @@ async def ws_serve(websocket, path=None):
     websocket.vad_pre_idx = 0
     speech_start = False
     speech_end_i = -1
+    speech_ms = 0  # 当前语音段累计时长(ms)，用于超长强制切分兜底
 
     websocket.wav_name = "microphone"
     websocket.mode = "2pass"
@@ -577,6 +591,7 @@ async def ws_serve(websocket, path=None):
 
             if speech_start:
                 frames_asr.append(pcm)
+                speech_ms += duration_ms
 
             # vad online
             try:
@@ -594,12 +609,31 @@ async def ws_serve(websocket, path=None):
                 frames_pre = frames[-beg_bias:] if beg_bias > 0 else []
                 frames_asr = []
                 frames_asr.extend(frames_pre)
+                speech_ms = _pcm_duration_ms(
+                    b"".join(frames_asr), fs=websocket.audio_fs, ch=1, sampwidth=2
+                )
 
             # ========== 3) 2pass：离线阶段触发点 ==========
-            if (speech_end_i != -1) or (not websocket.is_speaking):
+            # 超长语音兜底强制切分：播放大段音频且中间没有足够静音时，VAD 可能长时间
+            # 检测不到结束点，导致 frames_asr 一直累积、始终不送离线模型。这里兜底：
+            # 单个语音段累计时长超过 max_segment_ms 就强制送一次离线识别。
+            force_flush = (
+                args.max_segment_ms > 0
+                and speech_start
+                and speech_end_i == -1
+                and websocket.is_speaking
+                and speech_ms >= args.max_segment_ms
+            )
+
+            if (speech_end_i != -1) or (not websocket.is_speaking) or force_flush:
                 if websocket.mode in ("2pass", "offline"):
                     audio_in = b"".join(frames_asr)
-                    reason = "vad_end" if speech_end_i != -1 else "not_speaking"
+                    if speech_end_i != -1:
+                        reason = "vad_end"
+                    elif force_flush:
+                        reason = "force_maxlen"
+                    else:
+                        reason = "not_speaking"
 
                     # 保存 wav：放线程池，避免磁盘 IO 卡 loop
                     if websocket.save_offline_segments and audio_in:
@@ -621,16 +655,22 @@ async def ws_serve(websocket, path=None):
                         traceback.print_exc()
 
                 frames_asr = []
-                speech_start = False
                 frames_asr_online = []
                 websocket.status_dict_asr_online["cache"] = {}
+                speech_ms = 0
 
                 if not websocket.is_speaking:
+                    speech_start = False
                     websocket.vad_pre_idx = 0
                     frames = []
                     websocket.status_dict_vad["cache"] = {}
                     speech_end_i = -1
+                elif force_flush and speech_end_i == -1:
+                    # 语音仍在继续：保持 speech_start=True 继续累计后续帧，
+                    # 不清 VAD cache（VAD 仍在跟踪当前语音段）。
+                    frames = frames[-20:]
                 else:
+                    speech_start = False
                     frames = frames[-20:]
 
     except websockets.ConnectionClosed:
